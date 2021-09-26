@@ -17,20 +17,21 @@ int main(int argc, char* argv[])
         flag = 0;
         memset(strbuf, 0, 10000);
         while ((a = getchar()) != '\n') {
-            strbuf[n] == a;
-            if ((((int)a < 65) || (((int)a > 90) && ((int)a < 97)) || ((int)a > 122)) || (a != ' ')) {
-                printf("input err, please input \'a-z\' or \'A-Z\' or \" \"");
+            strbuf[n] = a;
+            if (((a < 'A') || ((a > 'Z') && (a < 'a')) || (a > 'z')) && (a != ' ')) {
+                printf("input err, please input \'a-z\' or \'A-Z\' or \" \", ==%c==\n", a);
                 flag = 1;
                 break;
             }
+	    n++;
         }
+	strbuf[n] = '\0';
         if (flag == 1) {
             continue;
         }
         if (strcmp(strbuf, "quit") == 0) {
             return 0;
         }
-        printf("\n your input str is %s\n", strbuf);
     }
     return 0;
 }
