@@ -43,6 +43,7 @@ static inline BOOL IsUniqueServer()
         return FALSE;
     }
     if (flock(g_InfoFd, LOCK_EX | LOCK_NB) != 0) {
+        printf("server running!!\n");
         return FALSE;
     }
     return TRUE;
@@ -64,9 +65,9 @@ int main(int args, char* argv[])
         return 0;
     }
     if (CheckRunEnv() == FALSE) {
-        printf("run error\n");
         return 0;
     }
+    daemon(0, 0);
     for (;;) {
     }
     printf("run success\n");
