@@ -8,11 +8,14 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <errno.h>
-#include <linux/netlink.h>
+#include <sys/un.h>
+#include <sys/file.h>
+#include <sys/stat.h>
 
 static const char* EXEC_DIR_PATH = "/dev/myEcho/";
 static const char* EXEC_FILE_PATH = "/dev/myEcho/echo.if";
 static const char* SERVER_PID_FILE = "/dev/myEcho/serpid";
+const char* SERVER_DOMAIN_NAME = "/dev/myEcho/echo_server";
 static int g_InfoFd = 0;
 static int g_uniqueLock = 0;
 
@@ -86,9 +89,9 @@ static int SavePid()
 int main(int args, char* argv[])
 {
     int ntsk = 0;
-    char rbuf[100];
-    struct sockaddr_nl cur;
-    struct sockaddr_nl dest;
+    int clfd = 0;
+    int ret = 0;
+    struct sockaddr_un local;
     struct msghdr msg;
     struct iovec iov;
     if (args != 2) {
@@ -98,42 +101,45 @@ int main(int args, char* argv[])
     if (CheckRunEnv() == FALSE) {
         return 0;
     }
-    ntsk = socket(PF_NETLINK, SOCK_RAW, 0);
+    ntsk = socket(AF_UNIX, SOCK_STREAM, 0);
     if (ntsk < 0) {
         printf (" why? == %d ==", errno);
         return 0;
     }
     /* daemon(0, 0); */
     if (SavePid() == -1) {
-	    printf("Save Service Err\n");
+        printf("Save Service Err\n");
         return 0;
     }
-    iov.iov_base = (void*)rbuf;
-    iov.iov_len = sizeof(rbuf);
-
-    msg.msg_name = (void*)(&dest);
-    msg.msg_namelen = sizeof(dest);
-
-    msg.msg_iov = &(iov);
-    msg.msg_iovlen = 1;
-
-    memset(&cur, 0, sizeof(cur));
-
-    cur.nl_family = PF_NETLINK;
-    printf("??????\n");
-    cur.nl_pid = getpid();
-    cur.nl_groups = 0;
-    printf("?1!?????\n");
-    printf("neng bu neng xing le");
-
-    if (bind(ntsk, (struct sockaddr*)&cur, sizeof(cur)) != 0) {
+    unlink(SERVER_DOMAIN_NAME);
+    local.sun_family = AF_UNIX;
+    strcpy(local.sun_path, SERVER_DOMAIN_NAME);
+    if (bind(ntsk, (struct sockaddr*)&local, sizeof(local)) != 0) {
         return -1;
     }
-    printf("bind success, pid = %d", cur.nl_pid);
-    memset(rbuf, 0, sizeof(char) * 100);
-    recvmsg(ntsk, &msg, 0);
-    printf("===%s===", rbuf);
-	
+    printf("bind success\n");
+    if (listen(ntsk, 10) < 0) {
+        return -1;
+    }
+    printf("listen success\n");
+    while(1) {
+        struct sockaddr_un client_addr;
+	char rbuf[100];
+        memset(rbuf, 0, sizeof(char) * 100);
+	clfd = accept(ntsk, NULL, NULL);
+        if (clfd < 0) {
+            printf("accept fail\n");
+	    return -1;
+	}
+        ret = recv(clfd, rbuf, 100, 0);
+	if (ret < 0) {
+            printf("recv failed\n");
+	}
+        printf("===%s===\n", rbuf);
+        close(clfd);
+	break;
+    }
+    close(ntsk);
     printf("run success\n");
     return 0;
 }

@@ -8,6 +8,9 @@
 #include <sys/time.h>
 #include <linux/netlink.h>
 #include <signal.h>
+#include <sys/un.h>
+#include <sys/file.h>
+#include <errno.h>
 static const char* EXEC_DIR_PATH = "/dev/myEcho/";
 static const char* EXEC_FILE_PATH = "/dev/myEcho/echo.if";
 static const char* SERVER_PID_FILE = "/dev/myEcho/serpid";
@@ -66,44 +69,25 @@ static pid_t GetServerPid()
     return out;
 }
 
-void SendStrToSer(char* sendbuf, int sendLen, pid_t destpid)
+void SendStrToSer(char* sendbuf, int sendLen, char* myPid)
 {
     int skfd = 0;
     int len = 0;
-
-    message = (struct nlmsghdr *)malloc(sizeof(struct nlmsghdr));       
-    skfd = socket(PF_NETLINK, SOCK_RAW, 0);
+    const char* server_file = "/dev/myEcho/echo_server";
+    struct sockaddr_un un;
+    un.sun_family = AF_UNIX;
+    strcpy(un.sun_path, server_file);
+    skfd = socket(AF_UNIX, SOCK_STREAM, 0);
     if(skfd < 0){
         printf("can not create a netlink socket, %d\n", skfd);
 	return;
     }
-    memset(&local, 0, sizeof(local));
-    local.nl_family = AF_NETLINK;
-    local.nl_pid = getpid();    
-    local.nl_groups = 0;
-    if(bind(skfd, (struct sockaddr *)&local, sizeof(local)) != 0){
-        printf("bind() error\n");
-        return;
+    if (connect(skfd, (struct sockaddr *)&un, sizeof(un)) < 0) {
+        printf("connet err, errno = %d\n", errno);
+	return;
     }
-    memset(&dest, 0, sizeof(dest));
-    dest.nl_family = AF_NETLINK;
-    dest.nl_pid = destpid;
-    dest.nl_groups = 0;
-    memset(message, '\0', sizeof(struct nlmsghdr));
-    message->nlmsg_len = NLMSG_SPACE(125);
-    message->nlmsg_flags = 0;
-    message->nlmsg_type = 0;
-    message->nlmsg_seq = 0;
-    message->nlmsg_pid = local.nl_pid;
-    memcpy(NLMSG_DATA(message), sendbuf, strlen(sendbuf)-1);
-    printf("send  to  kernel: %s,  send_id: %d   send_len: %d\n", \
-    (char *)NLMSG_DATA(message),local.nl_pid, strlen(sendbuf)-1);
-    len = sendto(skfd, message, message->nlmsg_len, 0,(struct sockaddr *)&dest, sizeof(dest));
-    if(!len){
-	perror("send pid:");
-	exit(-1);
-    }
-
+    send(skfd, sendbuf, sendLen, 0);
+    close(skfd);
     return;
 }
 
@@ -113,15 +97,40 @@ int main(int argc, char* argv[])
         printf("Please use \"clinet start\" or \"client end\"\n");
         return 0;
     }
+    int ret = 0;
     printf("clinet start\n");
     char strbuf[10000];
+    char myName[30];
     int flag = 0;
+    char strpid[4];
+    int refd = 0;
+    struct sockaddr_un local;
     pid_t serPid = 0;
+    pid_t myPid = getpid();
     serPid = GetServerPid();
     printf("Get Pid is =%d=", serPid);
     if (serPid == -1) {
 	printf("ERROR, Server Not Work, Exit\n");
 	return 0;
+    }
+    memcpy(strpid, &myPid, 4);
+    strcpy(myName, "/dev/myEcho/client");
+    strcat(myName, strpid);
+    refd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (refd < 0) {
+	printf ("create socket err\n");
+	return -1;
+    }
+    unlink(myName);
+    local.sun_family = AF_UNIX;
+    strcpy(local.sun_path, myName);
+    if (bind(refd, (struct sockaddr*)&local, sizeof(local)) != 0) {
+	printf("bind err\n");
+	return -1;
+    }
+    if (listen(refd, 1) < 0) {
+        printf("listen err\n");
+	return -1;
     }
     while(1) {
         char a;
@@ -144,9 +153,10 @@ int main(int argc, char* argv[])
         if (strcmp(strbuf, "quit") == 0) {
             return 0;
         }
-	SendStrToSer(strbuf, n, serPid);
+	SendStrToSer(strbuf, n, strpid);
 	printf("send end, wait for rp");
-	
+	memset(strbuf, 0 ,strlen(strbuf));
+	ret = recv(refd, strbuf, 100, 0);
         printf("rp is =%s=", strbuf);
     }
     return 0;
