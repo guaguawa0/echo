@@ -86,11 +86,11 @@ static int SavePid()
 int main(int args, char* argv[])
 {
     int ntsk = 0;
-    char rbuf[1000];
+    char rbuf[100];
     struct sockaddr_nl cur;
+    struct sockaddr_nl dest;
     struct msghdr msg;
     struct iovec iov;
-
     if (args != 2) {
         PrintHelp();
         return 0;
@@ -103,31 +103,37 @@ int main(int args, char* argv[])
         printf (" why? == %d ==", errno);
         return 0;
     }
-    daemon(0, 0);
+    /* daemon(0, 0); */
     if (SavePid() == -1) {
 	printf("Save Service Err\n");
 	return 0;
     }
-
     iov.iov_base = (void*)rbuf;
-    iov.iov_len = 1000;
+    iov.iov_len = sizeof(rbuf);
 
-    msg.msg_name = (void*)&(cur);
-    msg.msg_namelen = sizeof(cur);
-    msg.msg_iov = &iov;
+    msg.msg_name = (void*)(&dest);
+    msg.msg_namelen = sizeof(dest);
+
+    msg.msg_iov = &(iov);
     msg.msg_iovlen = 1;
 
     memset(&cur, 0, sizeof(cur));
+
     cur.nl_family = PF_NETLINK;
+    printf("??????\n");
     cur.nl_pid = getpid();
     cur.nl_groups = 0;
+    printf("?1!?????\n");
+    printf("neng bu neng xing le");
+
     if (bind(ntsk, (struct sockaddr*)&cur, sizeof(cur)) != 0) {
 	 return -1;
     }
+    printf("bind success, pid = %d", cur.nl_pid);
     for (;;) {
-        memset(rbuf, 0, sizeof(char) * 1000);
+        memset(rbuf, 0, sizeof(char) * 100);
         recvmsg(ntsk, &msg, 0);
-        write(g_InfoFd, "wo mo dao le", 100);	
+        printf("===%s===", rbuf);	
     }
     printf("run success\n");
     return 0;
