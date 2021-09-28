@@ -105,8 +105,8 @@ int main(int args, char* argv[])
     }
     /* daemon(0, 0); */
     if (SavePid() == -1) {
-	printf("Save Service Err\n");
-	return 0;
+	    printf("Save Service Err\n");
+        return 0;
     }
     iov.iov_base = (void*)rbuf;
     iov.iov_len = sizeof(rbuf);
@@ -127,14 +127,13 @@ int main(int args, char* argv[])
     printf("neng bu neng xing le");
 
     if (bind(ntsk, (struct sockaddr*)&cur, sizeof(cur)) != 0) {
-	 return -1;
+        return -1;
     }
     printf("bind success, pid = %d", cur.nl_pid);
-    for (;;) {
-        memset(rbuf, 0, sizeof(char) * 100);
-        recvmsg(ntsk, &msg, 0);
-        printf("===%s===", rbuf);	
-    }
+    memset(rbuf, 0, sizeof(char) * 100);
+    recvmsg(ntsk, &msg, 0);
+    printf("===%s===", rbuf);
+	
     printf("run success\n");
     return 0;
 }
