@@ -85,6 +85,31 @@ static int SavePid()
     fclose(pidFile);
     return 0;
 }
+const char* ppptest = "zhe shi yi ge ce shi";
+static void SendStr2Clinet(int sid, char* str)
+{
+    struct sockaddr_un desk;
+    int dk = 0;
+    int ret = 0;
+    char dest[30];
+    (void)sprintf(dest, "/dev/myEcho/client%d", sid);
+    printf("wo shi === %s ===\n", dest);
+    dk = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (dk < 0) {
+        printf("creat rp socket error, errno = %d", errno);
+	return;
+    }
+    desk.sun_family = AF_UNIX;
+    strcpy(desk.sun_path, dest);
+    if (connect(dk, (struct sockaddr *)&desk, sizeof(desk)) < 0) {
+        printf("connect to rp err, errno = %d", errno);
+	return;
+    }
+    ret = send(dk, ppptest, strlen(ppptest) + 1, 0);
+    printf("send info = %d\n ", ret);
+    close(dk);
+    return;
+}
 
 int main(int args, char* argv[])
 {
@@ -123,19 +148,22 @@ int main(int args, char* argv[])
     }
     printf("listen success\n");
     while(1) {
+	int clientid = 0;
         struct sockaddr_un client_addr;
-	char rbuf[100];
-        memset(rbuf, 0, sizeof(char) * 100);
+	char rbuf[1000];
+        memset(rbuf, 0, sizeof(char) * 1000);
 	clfd = accept(ntsk, NULL, NULL);
         if (clfd < 0) {
             printf("accept fail\n");
 	    return -1;
 	}
-        ret = recv(clfd, rbuf, 100, 0);
+        ret = recv(clfd, rbuf, 1000, 0);
 	if (ret < 0) {
             printf("recv failed\n");
 	}
-        printf("===%s===\n", rbuf);
+	memcpy(&clientid, rbuf, sizeof(int));
+        printf("===%s===%d\n", (rbuf + sizeof(int)), clientid);
+	SendStr2Clinet(clientid, (rbuf + sizeof(int)));
         close(clfd);
 	break;
     }

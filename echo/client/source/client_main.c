@@ -71,6 +71,7 @@ static pid_t GetServerPid()
 
 void SendStrToSer(char* sendbuf, int sendLen, char* myPid)
 {
+    static int isInitEd = 0;
     int skfd = 0;
     int len = 0;
     const char* server_file = "/dev/myEcho/echo_server";
@@ -86,6 +87,7 @@ void SendStrToSer(char* sendbuf, int sendLen, char* myPid)
         printf("connet err, errno = %d\n", errno);
 	return;
     }
+    isInitEd = 1;
     send(skfd, sendbuf, sendLen, 0);
     close(skfd);
     return;
@@ -102,7 +104,7 @@ int main(int argc, char* argv[])
     char strbuf[10000];
     char myName[30];
     int flag = 0;
-    char strpid[4];
+    char strpid[5] = {'\0'};
     int refd = 0;
     struct sockaddr_un local;
     pid_t serPid = 0;
@@ -114,8 +116,7 @@ int main(int argc, char* argv[])
 	return 0;
     }
     memcpy(strpid, &myPid, 4);
-    strcpy(myName, "/dev/myEcho/client");
-    strcat(myName, strpid);
+    sprintf(myName, "/dev/myEcho/client%d", myPid);
     refd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (refd < 0) {
 	printf ("create socket err\n");
@@ -128,13 +129,14 @@ int main(int argc, char* argv[])
 	printf("bind err\n");
 	return -1;
     }
-    if (listen(refd, 1) < 0) {
+    if (listen(refd, 10) < 0) {
         printf("listen err\n");
 	return -1;
     }
     while(1) {
         char a;
         int n = 0;
+	int clfd = 0;
         flag = 0;
         memset(strbuf, 0, 10000);
         while ((a = getchar()) != '\n') {
@@ -153,11 +155,18 @@ int main(int argc, char* argv[])
         if (strcmp(strbuf, "quit") == 0) {
             return 0;
         }
-	SendStrToSer(strbuf, n, strpid);
-	printf("send end, wait for rp");
-	memset(strbuf, 0 ,strlen(strbuf));
-	ret = recv(refd, strbuf, 100, 0);
-        printf("rp is =%s=", strbuf);
+	memmove(&strbuf[4], strbuf, strlen(strbuf) + 1);
+	memcpy(strbuf, strpid, sizeof(int));
+	SendStrToSer(strbuf, n + 4, strpid);
+	printf("send end, wait for rp\n");
+	memset(strbuf, 0 ,sizeof(strbuf));
+        clfd = accept(refd, NULL, NULL);
+	if (clfd < 0) {
+            printf("accept fail\n");
+	    return 0;
+	}
+	ret = recv(clfd, strbuf, 100, 0);
+	printf("rp is ==%s==%d==%d==\n", strbuf, ret, errno);
     }
     return 0;
 }
