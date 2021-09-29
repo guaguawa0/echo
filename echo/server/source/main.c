@@ -11,7 +11,8 @@
 #include <sys/un.h>
 #include <sys/file.h>
 #include <sys/stat.h>
-typedef void (*DEAL)(char*)
+#include <signal.h>
+typedef void (*DEAL)(char*);
 static const char* EXEC_DIR_PATH = "/dev/myEcho/";
 static const char* EXEC_FILE_PATH = "/dev/myEcho/echo.if";
 static const char* SERVER_PID_FILE = "/dev/myEcho/serpid";
@@ -52,6 +53,14 @@ void NoChange(char* in)
 }
 
 DEAL deal[3] = {Transfrom2Up, Transfrom2Low, NoChange};
+
+static void Sleep_Ms(unsigned int secs)
+{
+    struct timeval tval;
+    tval.tv_sec = secs / 1000;
+    tval.tv_usec = (secs * 1000) % 1000000;
+    select(0, NULL, NULL, NULL, &tval);
+}
 
 static inline void PrintHelp()
 {
@@ -161,7 +170,7 @@ int main(int args, char* argv[])
         printf (" why? == %d ==", errno);
         return 0;
     }
-    /* daemon(0, 0); */
+    daemon(0, 0);
     if (SavePid() == -1) {
         printf("Save Service Err\n");
         return 0;
@@ -182,6 +191,7 @@ int main(int args, char* argv[])
         struct sockaddr_un client_addr;
         char rbuf[1000];
         int mod = 0;
+	pid_t tmpPid = 0;
         memset(rbuf, 0, sizeof(char) * 1000);
         clfd = accept(ntsk, NULL, NULL);
         if (clfd < 0) {
@@ -196,8 +206,19 @@ int main(int args, char* argv[])
         memcpy(&mod, rbuf + sizeof(int), sizeof(int));
         printf("===%s===%d\n", (rbuf + sizeof(int) * 2), clientid);
         deal[mod]((rbuf + sizeof(int) * 2));
-        SendStr2Clinet(clientid, (rbuf + sizeof(int) * 2));
-        close(clfd);
+	signal(SIGCLD, SIG_IGN);
+	tmpPid = fork();
+	if (tmpPid < 0) {
+	    printf("fork err, errno = %d", errno);
+	    return -1;
+        } else if (tmpPid == 0) {
+            Sleep_Ms(200);
+            SendStr2Clinet(clientid, (rbuf + sizeof(int) * 2));
+            close(clfd);
+            return 0;
+	} else {
+            close(clfd);
+	}
     }
     close(ntsk);
     printf("run success\n");

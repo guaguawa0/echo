@@ -174,7 +174,7 @@ int main(int argc, char* argv[])
         memset(strbuf, 0, 10000);
         while ((a = getchar()) != '\n') {
             strbuf[n] = a;
-            if (((a < 'A') || ((a > 'Z') && (a < 'a')) || (a > 'z')) && ((a != ' ') || (a != ':'))) {
+            if (((a != ' ') && (a != ':') && (a != '1') && (a != '0') && (a != '2')) && ((a < 'A') || ((a > 'Z') && (a < 'a')) || (a > 'z'))) {
                 printf("input err, please input \'a-z\' or \'A-Z\' or \" \", ==%c==\n", a);
                 flag = 1;
                 break;
@@ -194,7 +194,7 @@ int main(int argc, char* argv[])
         memmove(&strbuf[8], strbuf, strlen(strbuf) + 1);
         memcpy(strbuf, strpid, sizeof(int));
         memcpy(&strbuf[4], &g_mode, sizeof(int));
-        SendStrToSer(strbuf, n + 4, strpid);
+        SendStrToSer(strbuf, n + 8, strpid);
         printf("send end, wait for rp\n");
         memset(strbuf, 0 ,sizeof(strbuf));
         clfd = accept(refd, NULL, NULL);
