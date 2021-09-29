@@ -11,7 +11,7 @@
 #include <sys/un.h>
 #include <sys/file.h>
 #include <sys/stat.h>
-
+typedef void (*DEAL)(char*)
 static const char* EXEC_DIR_PATH = "/dev/myEcho/";
 static const char* EXEC_FILE_PATH = "/dev/myEcho/echo.if";
 static const char* SERVER_PID_FILE = "/dev/myEcho/serpid";
@@ -24,6 +24,35 @@ typedef enum _BOOL {
     FALSE,
 } BOOL;
 
+void Transfrom2Up(char* in)
+{
+    int i = 0;
+    for (i = 0; in[i] != '\0'; i++) {
+        if ((in[i] >= 'a') && (in[i] <= 'z')) {
+            in[i] -= 32;
+        }
+    }
+    return;
+}
+
+void Transfrom2Low(char* in)
+{
+    int i = 0;
+    for (i = 0; in[i] != '\0'; i++) {
+        if ((in[i] >= 'A') && (in[i] <= 'Z')) {
+            in[i] += 32;
+        }
+    }
+    return;
+}
+
+void NoChange(char* in)
+{
+    return;
+}
+
+DEAL deal[3] = {Transfrom2Up, Transfrom2Low, NoChange};
+
 static inline void PrintHelp()
 {
     printf("Please Use \"Server start\" or \"Server stop\"\n");
@@ -33,7 +62,7 @@ static inline void PrintHelp()
 static inline BOOL CreateInfoFile()
 {
     int ret = 0;
-    if(access(EXEC_DIR_PATH, F_OK) != 0) {      
+    if (access(EXEC_DIR_PATH, F_OK) != 0) {      
         mkdir(EXEC_DIR_PATH, 0777);      
     }
     g_InfoFd = open(EXEC_FILE_PATH, O_RDWR | O_CREAT);
@@ -79,13 +108,13 @@ static int SavePid()
     myPid = getpid();
     ret = fwrite(&myPid, sizeof(myPid), 1, pidFile);
     if (ret <= 0) {
-	fclose(pidFile);
-	return -1;
+        fclose(pidFile);
+        return -1;
     }
     fclose(pidFile);
     return 0;
 }
-const char* ppptest = "zhe shi yi ge ce shi";
+
 static void SendStr2Clinet(int sid, char* str)
 {
     struct sockaddr_un desk;
@@ -97,15 +126,16 @@ static void SendStr2Clinet(int sid, char* str)
     dk = socket(AF_UNIX, SOCK_STREAM, 0);
     if (dk < 0) {
         printf("creat rp socket error, errno = %d", errno);
-	return;
+        return;
     }
     desk.sun_family = AF_UNIX;
     strcpy(desk.sun_path, dest);
     if (connect(dk, (struct sockaddr *)&desk, sizeof(desk)) < 0) {
         printf("connect to rp err, errno = %d", errno);
-	return;
+        close(dk);
+        return;
     }
-    ret = send(dk, ppptest, strlen(ppptest) + 1, 0);
+    ret = send(dk, str, strlen(str) + 1, 0);
     printf("send info = %d\n ", ret);
     close(dk);
     return;
@@ -148,24 +178,26 @@ int main(int args, char* argv[])
     }
     printf("listen success\n");
     while(1) {
-	int clientid = 0;
+        int clientid = 0;
         struct sockaddr_un client_addr;
-	char rbuf[1000];
+        char rbuf[1000];
+        int mod = 0;
         memset(rbuf, 0, sizeof(char) * 1000);
-	clfd = accept(ntsk, NULL, NULL);
+        clfd = accept(ntsk, NULL, NULL);
         if (clfd < 0) {
             printf("accept fail\n");
-	    return -1;
-	}
+            return -1;
+        }
         ret = recv(clfd, rbuf, 1000, 0);
-	if (ret < 0) {
+        if (ret < 0) {
             printf("recv failed\n");
-	}
-	memcpy(&clientid, rbuf, sizeof(int));
-        printf("===%s===%d\n", (rbuf + sizeof(int)), clientid);
-	SendStr2Clinet(clientid, (rbuf + sizeof(int)));
+        }
+        memcpy(&clientid, rbuf, sizeof(int));
+        memcpy(&mod, rbuf + sizeof(int), sizeof(int));
+        printf("===%s===%d\n", (rbuf + sizeof(int) * 2), clientid);
+        deal[mod]((rbuf + sizeof(int) * 2));
+        SendStr2Clinet(clientid, (rbuf + sizeof(int) * 2));
         close(clfd);
-	break;
     }
     close(ntsk);
     printf("run success\n");

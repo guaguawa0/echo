@@ -11,6 +11,19 @@
 #include <sys/un.h>
 #include <sys/file.h>
 #include <errno.h>
+
+typedef enum _BOOL {
+    TRUE = 0,
+    FALSE,
+} BOOL;
+
+typedef enum _MOD {  
+    TO_UP = 0,
+    TO_LOW,
+    NO_CHANGE,
+} MOD;
+
+static int g_mode = TO_UP;
 static const char* EXEC_DIR_PATH = "/dev/myEcho/";
 static const char* EXEC_FILE_PATH = "/dev/myEcho/echo.if";
 static const char* SERVER_PID_FILE = "/dev/myEcho/serpid";
@@ -18,11 +31,6 @@ static const char* SERVER_PID_FILE = "/dev/myEcho/serpid";
 struct sockaddr_nl local;
 struct sockaddr_nl dest;
 struct nlmsghdr* message = NULL;
-
-typedef enum _BOOL {
-	TRUE = 0,
-	FALSE,
-} BOOL;
 
 static BOOL IsServerRunning()
 {
@@ -33,11 +41,11 @@ static BOOL IsServerRunning()
     }
     tmpfd = open(EXEC_FILE_PATH, O_RDWR | O_CREAT);
     if (tmpfd == -1) {
-	printf("open file err\n");
-	return FALSE;
+        printf("open file err\n");
+        return FALSE;
     }
     if (flock(tmpfd, LOCK_EX | LOCK_NB) == 0) {
-	close(tmpfd);
+        close(tmpfd);
         return FALSE;
     }
     close(tmpfd);
@@ -50,11 +58,11 @@ static pid_t GetServerPid()
     pid_t out = -1;
     int ret = 0;
     if (IsServerRunning() == FALSE) {
-	printf("ser not run\n");
-	return out;
+        printf("ser not run\n");
+        return out;
     }
     if (access(SERVER_PID_FILE, F_OK) != 0) {
-	return out;
+        return out;
     }
     pidFile = fopen(SERVER_PID_FILE, "r");
     if (pidFile == NULL) {
@@ -62,11 +70,36 @@ static pid_t GetServerPid()
     }
     ret = fread(&out, sizeof(out), 1, pidFile);
     if (ret == 0) {
-	fclose(pidFile);
-	return -1;
+        fclose(pidFile);
+        return -1;
     }
     fclose(pidFile);
     return out;
+}
+
+static int DealChangeMod(char* input)
+{
+    int mod = 0;
+    if (input[0] != ':') {
+        return -1;
+    }
+    sscanf(input, ":set mod %d", &mod);
+    switch (mod)
+    {
+    case TO_UP:
+        g_mode = TO_UP;
+        break;
+    case TO_LOW:
+        g_mode = TO_LOW;
+        break;
+    case NO_CHANGE:
+        g_mode = NO_CHANGE;
+        break;
+    default:
+        printf("unknow mod = %d, please check\n", mod);
+        break;
+    }
+    return 0;
 }
 
 void SendStrToSer(char* sendbuf, int sendLen, char* myPid)
@@ -81,11 +114,11 @@ void SendStrToSer(char* sendbuf, int sendLen, char* myPid)
     skfd = socket(AF_UNIX, SOCK_STREAM, 0);
     if(skfd < 0){
         printf("can not create a netlink socket, %d\n", skfd);
-	return;
+        return;
     }
     if (connect(skfd, (struct sockaddr *)&un, sizeof(un)) < 0) {
         printf("connet err, errno = %d\n", errno);
-	return;
+        return;
     }
     isInitEd = 1;
     send(skfd, sendbuf, sendLen, 0);
@@ -112,61 +145,65 @@ int main(int argc, char* argv[])
     serPid = GetServerPid();
     printf("Get Pid is =%d=", serPid);
     if (serPid == -1) {
-	printf("ERROR, Server Not Work, Exit\n");
-	return 0;
+        printf("ERROR, Server Not Work, Exit\n");
+        return 0;
     }
     memcpy(strpid, &myPid, 4);
     sprintf(myName, "/dev/myEcho/client%d", myPid);
     refd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (refd < 0) {
-	printf ("create socket err\n");
-	return -1;
+        printf ("create socket err\n");
+        return -1;
     }
     unlink(myName);
     local.sun_family = AF_UNIX;
     strcpy(local.sun_path, myName);
     if (bind(refd, (struct sockaddr*)&local, sizeof(local)) != 0) {
-	printf("bind err\n");
-	return -1;
+        printf("bind err\n");
+        return -1;
     }
     if (listen(refd, 10) < 0) {
         printf("listen err\n");
-	return -1;
+        return -1;
     }
     while(1) {
         char a;
         int n = 0;
-	int clfd = 0;
+        int clfd = 0;
         flag = 0;
         memset(strbuf, 0, 10000);
         while ((a = getchar()) != '\n') {
             strbuf[n] = a;
-            if (((a < 'A') || ((a > 'Z') && (a < 'a')) || (a > 'z')) && (a != ' ')) {
+            if (((a < 'A') || ((a > 'Z') && (a < 'a')) || (a > 'z')) && ((a != ' ') || (a != ':'))) {
                 printf("input err, please input \'a-z\' or \'A-Z\' or \" \", ==%c==\n", a);
                 flag = 1;
                 break;
             }
-	    n++;
+            n++;
         }
-	strbuf[n] = '\0';
+        strbuf[n] = '\0';
         if (flag == 1) {
             continue;
         }
-        if (strcmp(strbuf, "quit") == 0) {
+        if (strcmp(strbuf, ":quit") == 0) {
             return 0;
         }
-	memmove(&strbuf[4], strbuf, strlen(strbuf) + 1);
-	memcpy(strbuf, strpid, sizeof(int));
-	SendStrToSer(strbuf, n + 4, strpid);
-	printf("send end, wait for rp\n");
-	memset(strbuf, 0 ,sizeof(strbuf));
+        if (DealChangeMod(strbuf) == 0) {
+            continue;
+        }
+        memmove(&strbuf[8], strbuf, strlen(strbuf) + 1);
+        memcpy(strbuf, strpid, sizeof(int));
+        memcpy(&strbuf[4], &g_mode, sizeof(int));
+        SendStrToSer(strbuf, n + 4, strpid);
+        printf("send end, wait for rp\n");
+        memset(strbuf, 0 ,sizeof(strbuf));
         clfd = accept(refd, NULL, NULL);
-	if (clfd < 0) {
+        if (clfd < 0) {
             printf("accept fail\n");
-	    return 0;
-	}
-	ret = recv(clfd, strbuf, 100, 0);
-	printf("rp is ==%s==%d==%d==\n", strbuf, ret, errno);
+            return 0;
+        }
+        ret = recv(clfd, strbuf, 100, 0);
+        printf("rp is ==%s==%d==%d==\n", strbuf, ret, errno);
     }
     return 0;
 }
