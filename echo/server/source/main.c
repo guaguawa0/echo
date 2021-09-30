@@ -167,6 +167,9 @@ static BOOL CheckProcessLive(pid_t pid)
 
 static void DropOneNode(struct ClientNode* last, struct ClientNode* tmp)
 {
+    if ((last == NULL) || (last->next == NULL)) {
+        return;
+    }
     last->next = tmp->next;
     free(tmp);
     tmp = last;
@@ -192,10 +195,15 @@ static void ClientStatistics(struct ClientNode* head)
     }
     struct ClientNode* tmp = head->next;
     struct ClientNode* last = head;
-    for (; tmp != NULL; last = tmp, tmp = tmp->next) {
-        if(CheckProcessLive(tmp->pid) == FALSE) {
-            DropOneNode(last, tmp);
-	}
+    while (tmp != NULL) {
+        tmp = head->next;
+	last = head;
+        for (; tmp != NULL; last = tmp, tmp = tmp->next) {
+            if((tmp->value != -1) && (CheckProcessLive(tmp->pid) == FALSE)) {
+                DropOneNode(last, tmp);
+	        break;
+            }
+        }
     }
 }
 static BOOL AddOneNode(struct ClientNode* head, pid_t pid, int value)
@@ -223,7 +231,6 @@ static BOOL AddOneNode(struct ClientNode* head, pid_t pid, int value)
         tmp2->value = value;
         tmp2->next = NULL;
     }
-    ClientStatistics(head);
     return TRUE;
 }
 
