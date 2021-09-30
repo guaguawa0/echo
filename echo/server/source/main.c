@@ -19,6 +19,11 @@ static const char* SERVER_PID_FILE = "/dev/myEcho/serpid";
 const char* SERVER_DOMAIN_NAME = "/dev/myEcho/echo_server";
 static int g_InfoFd = 0;
 static int g_uniqueLock = 0;
+struct ClientNode {
+    pid_t pid;
+    int teansNum;
+    ClientNode* next;
+};
 
 typedef enum _BOOL {
     TRUE = 0,
@@ -150,6 +155,78 @@ static void SendStr2Clinet(int sid, char* str)
     return;
 }
 
+static BOOL CheckProcessLive(pid_t pid)
+{
+    char* name[100];
+    sprintf(name, "/proc/%d", pid);
+    if (access(name) != 0) {
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static void DropOneNode(struct ClientNode* last, struct ClientNode* tmp)
+{
+    last->next = tmp->next;
+    free(tmp);
+    tmp = last;
+}
+
+static BOOL AddOneNode(struct ClientNode* head, pid_t pid, int value)
+{
+    struct ClientNode* tmp = head->next;
+    for (; tmp->next != NULL; tmp = tmp->next) {
+        if (tmp->pid == pid) {
+	    tmp->value += value;
+	    return TRUE;
+	}
+    }
+    if (tmp->pid == pid) {
+        tmp->value += value;
+	return TRUE;
+    } else {
+        struct ClientNode* tmp2 = (struct ClientNode*)malloc(sizeof(struct ClientNode));
+	if (tmp2 == NULL) {
+            return FALSE;
+	}
+	tmp->next = tmp2;
+	tmp2->pid = pid;
+	tmp2->value = value;
+	tmp2->next = NULL;
+    }
+    return TRUE;
+}
+
+static void ClientStatistics(ClientNode* head)
+{
+    if ((head == NULL) || (head->next == NULL)) {
+        return;
+    }
+    ClientNode* tmp = head->next;
+    ClientNode* last = head;
+    for (; tmp != NULL; last = tmp, tmp = tmp->next) {
+        if(CheckProcessLive(tmp->pid) == FALSE) {
+            DropOneNode(last, tmp);
+	}
+    }
+}
+
+static void AddToClientList()
+{
+    
+}
+
+static int shouhu(pid_t pid)
+{
+    struct ClientNode* head = (struct ClientNode*)malloc(sizeof(struct ClientNode));
+    if (head == null) {
+        return -1;
+    }
+    head->pid = pid;
+    head->value = -1;
+
+}
+
 int main(int args, char* argv[])
 {
     int ntsk = 0;
@@ -167,7 +244,7 @@ int main(int args, char* argv[])
     }
     ntsk = socket(AF_UNIX, SOCK_STREAM, 0);
     if (ntsk < 0) {
-        printf (" why? == %d ==", errno);
+        printf ("Create socket err, errno = %d\n", errno);
         return 0;
     }
     daemon(0, 0);
