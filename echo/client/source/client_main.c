@@ -80,7 +80,7 @@ static pid_t GetServerPid()
 static int DealChangeMod(char* input)
 {
     int mod = 0;
-    if (input[0] != ':') {
+    if ((input[0] != ':') || (input[1] == 'q')) {
         return -1;
     }
     sscanf(input, ":set mod %d", &mod);
@@ -143,11 +143,11 @@ int main(int argc, char* argv[])
     pid_t serPid = 0;
     pid_t myPid = getpid();
     serPid = GetServerPid();
-    printf("Get Pid is =%d=", serPid);
     if (serPid == -1) {
         printf("ERROR, Server Not Work, Exit\n");
         return 0;
     }
+    printf("pid = %d\n", serPid);
     memcpy(strpid, &myPid, 4);
     sprintf(myName, "/dev/myEcho/client%d", myPid);
     refd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -203,7 +203,7 @@ int main(int argc, char* argv[])
             return 0;
         }
         ret = recv(clfd, strbuf, 100, 0);
-        printf("rp is ==%s==%d==%d==\n", strbuf, ret, errno);
+        printf("rp is %s\n", strbuf);
     }
     return 0;
 }
