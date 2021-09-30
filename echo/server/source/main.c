@@ -17,12 +17,13 @@ static const char* EXEC_DIR_PATH = "/dev/myEcho/";
 static const char* EXEC_FILE_PATH = "/dev/myEcho/echo.if";
 static const char* SERVER_PID_FILE = "/dev/myEcho/serpid";
 const char* SERVER_DOMAIN_NAME = "/dev/myEcho/echo_server";
+const char* SERVER_DEAMON_NAME = "/dev/myEcho/echo_demon";
 static int g_InfoFd = 0;
 static int g_uniqueLock = 0;
 struct ClientNode {
     pid_t pid;
-    int teansNum;
-    ClientNode* next;
+    int value;
+    struct ClientNode* next;
 };
 
 typedef enum _BOOL {
@@ -136,7 +137,6 @@ static void SendStr2Clinet(int sid, char* str)
     int ret = 0;
     char dest[30];
     (void)sprintf(dest, "/dev/myEcho/client%d", sid);
-    printf("wo shi === %s ===\n", dest);
     dk = socket(AF_UNIX, SOCK_STREAM, 0);
     if (dk < 0) {
         printf("creat rp socket error, errno = %d", errno);
@@ -159,7 +159,7 @@ static BOOL CheckProcessLive(pid_t pid)
 {
     char* name[100];
     sprintf(name, "/proc/%d", pid);
-    if (access(name) != 0) {
+    if (access(name, F_OK) != 0) {
         return FALSE;
     }
     return TRUE;
@@ -172,58 +172,148 @@ static void DropOneNode(struct ClientNode* last, struct ClientNode* tmp)
     tmp = last;
 }
 
+static BOOL QueryOneNode(struct ClientNode* head, pid_t pid)
+{
+    char rp[30];
+    struct ClientNode* tmp = head;
+    for (; tmp != NULL; tmp = tmp->next) {
+        if (tmp->pid == pid) {
+            sprintf(rp, "%d", tmp->value);
+            SendStr2Clinet(pid, rp);
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
 static BOOL AddOneNode(struct ClientNode* head, pid_t pid, int value)
 {
     struct ClientNode* tmp = head->next;
     for (; tmp->next != NULL; tmp = tmp->next) {
         if (tmp->pid == pid) {
-	    tmp->value += value;
-	    return TRUE;
-	}
+            tmp->value += value;
+            return TRUE;
+        }
     }
     if (tmp->pid == pid) {
         tmp->value += value;
-	return TRUE;
+        return TRUE;
     } else {
         struct ClientNode* tmp2 = (struct ClientNode*)malloc(sizeof(struct ClientNode));
-	if (tmp2 == NULL) {
+        if (tmp2 == NULL) {
             return FALSE;
-	}
-	tmp->next = tmp2;
-	tmp2->pid = pid;
-	tmp2->value = value;
-	tmp2->next = NULL;
+        }
+        tmp->next = tmp2;
+        tmp2->pid = pid;
+        tmp2->value = value;
+        tmp2->next = NULL;
     }
+    ClientStatistics(head);
     return TRUE;
 }
 
-static void ClientStatistics(ClientNode* head)
+static void ClientStatistics(struct ClientNode* head)
 {
     if ((head == NULL) || (head->next == NULL)) {
         return;
     }
-    ClientNode* tmp = head->next;
-    ClientNode* last = head;
+    struct ClientNode* tmp = head->next;
+    struct ClientNode* last = head;
     for (; tmp != NULL; last = tmp, tmp = tmp->next) {
         if(CheckProcessLive(tmp->pid) == FALSE) {
             DropOneNode(last, tmp);
-	}
+        }
     }
 }
 
-static void AddToClientList()
+static void AddToClientList(pid_t pid, int value)
 {
-    
+    struct sockaddr_un desk;
+    int dk = 0;
+    int ret = 0;
+    int info[3];
+    info[0] = 0;
+    info[1] = (int)pid;
+    info[2] = value;
+    dk = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (dk < 0) {
+        printf("creat rp socket error, errno = %d", errno);
+        return;
+    }
+    desk.sun_family = AF_UNIX;
+    strcpy(desk.sun_path, SERVER_DEAMON_NAME);
+    if (connect(dk, (struct sockaddr *)&desk, sizeof(desk)) < 0) {
+        printf("connect to rp err, errno = %d", errno);
+        close(dk);
+        return;
+    }
+    ret = send(dk, info, sizeof(int) * 3, 0);
+    printf("send info = %d\n ", ret);
+    close(dk);
+    return;
 }
 
 static int shouhu(pid_t pid)
 {
+    struct sockaddr_un local;
+    int ret = 0;
+    int shsk = 0;
+    int refd = 0;
+    int buf[3];
+    struct timeval tval;
+    fd_set rdfds;
     struct ClientNode* head = (struct ClientNode*)malloc(sizeof(struct ClientNode));
-    if (head == null) {
+    if (head == NULL) {
         return -1;
     }
     head->pid = pid;
     head->value = -1;
+
+    shsk = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (shsk < 0) {
+        printf ("Create socket err, errno = %d\n", errno);
+        return 0;
+    }
+    unlink(SERVER_DEAMON_NAME);
+    local.sun_family = AF_UNIX;
+    strcpy(local.sun_path, SERVER_DEAMON_NAME);
+    if (bind(shsk, (struct sockaddr*)&local, sizeof(local)) != 0) {
+        printf("bind error\n");
+        return -1;
+    }
+    if (listen(shsk, 10) < 0) {
+        printf("listen error\n");
+        return -1;
+    }
+    tval.tv_sec = 5;
+    tval.tv_usec = 0;
+
+    while (1) {
+        FD_ZERO(&rdfds);
+        FD_SET(shsk, &rdfds);
+        ret = select(1, &rdfds, NULL, NULL, &tval);
+        if (ret < 0) {
+            printf("select err = %d", errno);
+            return -1;
+        } else if (ret != 0) {
+            refd = accept(shsk, NULL, NULL);
+            if (shsk < 0) {
+                printf("accept fail\n");
+                return -1;
+            }
+            ret = recv(refd, buf, 3, 0);
+            if (ret < 0) {
+                printf("recv failed\n");
+            }
+            if (buf[0] == 0) {
+                (void)AddOneNode(head, buf[1], buf[2]);
+            } else {
+                QueryOneNode(head, buf[1]);
+            }
+        } else {
+            ClientStatistics(head);
+        }
+    }
 
 }
 
@@ -235,6 +325,7 @@ int main(int args, char* argv[])
     struct sockaddr_un local;
     struct msghdr msg;
     struct iovec iov;
+    pid_t mypid = 0;
     if (args != 2) {
         PrintHelp();
         return 0;
@@ -252,6 +343,9 @@ int main(int args, char* argv[])
         printf("Save Service Err\n");
         return 0;
     }
+    mypid = getpid();
+    signal(SIGCLD, SIG_IGN);
+    shouhu(mypid);
     unlink(SERVER_DOMAIN_NAME);
     local.sun_family = AF_UNIX;
     strcpy(local.sun_path, SERVER_DOMAIN_NAME);
@@ -268,7 +362,7 @@ int main(int args, char* argv[])
         struct sockaddr_un client_addr;
         char rbuf[1000];
         int mod = 0;
-	pid_t tmpPid = 0;
+        pid_t tmpPid = 0;
         memset(rbuf, 0, sizeof(char) * 1000);
         clfd = accept(ntsk, NULL, NULL);
         if (clfd < 0) {
@@ -283,19 +377,19 @@ int main(int args, char* argv[])
         memcpy(&mod, rbuf + sizeof(int), sizeof(int));
         printf("===%s===%d\n", (rbuf + sizeof(int) * 2), clientid);
         deal[mod]((rbuf + sizeof(int) * 2));
-	signal(SIGCLD, SIG_IGN);
-	tmpPid = fork();
-	if (tmpPid < 0) {
-	    printf("fork err, errno = %d", errno);
-	    return -1;
+        tmpPid = fork();
+        if (tmpPid < 0) {
+            printf("fork err, errno = %d", errno);
+            return -1;
         } else if (tmpPid == 0) {
             Sleep_Ms(200);
             SendStr2Clinet(clientid, (rbuf + sizeof(int) * 2));
+            AddToClientList(clientid, strlen(rbuf + sizeof(int) * 2));
             close(clfd);
             return 0;
-	} else {
+        } else {
             close(clfd);
-	}
+        }
     }
     close(ntsk);
     printf("run success\n");
